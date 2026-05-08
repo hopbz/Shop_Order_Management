@@ -1,0 +1,24 @@
+# ── Line endings ─────────────────────────────────────────
+* text=auto eol=lf
+
+# ── Shell scripts – always LF ────────────────────────────
+*.sh text eol=lf
+*.bash text eol=lf
+mvnw text eol=lf
+
+# ── Windows batch – always CRLF ──────────────────────────
+*.cmd text eol=crlf
+*.bat text eol=crlf
+mvnw.cmd text eol=crlf
+
+# ── Binary files ─────────────────────────────────────────
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+*.woff binary
+*.woff2 binary
+*.jar binary
+*.class binary

@@ -1,0 +1,32 @@
+# ── Secrets ─────────────────────────────────────────────
+.env
+.env.local
+.env.production
+
+# ── OS ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ─────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/settings.json
+.vscode/*.code-workspace
+*.suo
+*.user
+
+# ── Java / Maven ────────────────────────────────────────
+BE/target/
+BE/.mvn/wrapper/maven-wrapper.jar
+BE/build_log.txt
+*.class
+
+# ── Node / Frontend ─────────────────────────────────────
+FE/node_modules/
+FE/dist/
+FE/.next/
+FE/out/
+
+# ── Docker ──────────────────────────────────────────────
+*.log

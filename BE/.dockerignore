@@ -1,0 +1,10 @@
+target/
+*.log
+.mvn/wrapper/maven-wrapper.jar
+.git/
+.gitignore
+*.md
+.github/
+.vscode/
+HELP.md
+build_log.txt
