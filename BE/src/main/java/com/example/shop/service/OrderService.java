@@ -1,15 +1,31 @@
 package com.example.shop.service;
 
-import com.example.shop.dto.request.*;
-import com.example.shop.dto.response.*;
-import com.example.shop.entity.*;
-import com.example.shop.exception.*;
-import com.example.shop.repository.*;
+import com.example.shop.dto.request.CreateOrderItemRequest;
+import com.example.shop.dto.request.CreateOrderRequest;
+import com.example.shop.dto.request.UpdateOrderStatusRequest;
+import com.example.shop.dto.response.OrderItemResponse;
+import com.example.shop.dto.response.OrderResponse;
+import com.example.shop.entity.Order;
+import com.example.shop.entity.OrderItem;
+import com.example.shop.entity.Product;
+import com.example.shop.exception.CustomerNotFoundException;
+import com.example.shop.exception.InvalidOrderStatusException;
+import com.example.shop.exception.OrderNotFoundException;
+import com.example.shop.exception.OutOfStockException;
+import com.example.shop.exception.ProductNotFoundException;
+import com.example.shop.repository.CustomerRepository;
+import com.example.shop.repository.OrderItemRepository;
+import com.example.shop.repository.OrderRepository;
+import com.example.shop.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigDecimal;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -23,74 +39,79 @@ public class OrderService {
 
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest req) {
-        // 1. Validate customer
         customerRepository.findById(req.getCustomerId())
                 .orElseThrow(() -> new CustomerNotFoundException(req.getCustomerId()));
 
-        // 2. Validate toàn bộ items trước khi lưu bất cứ thứ gì
         List<Product> products = new ArrayList<>();
+        Map<Long, Integer> requestedQuantities = new HashMap<>();
+
         for (CreateOrderItemRequest itemReq : req.getItems()) {
-            Product p = productRepository.findById(itemReq.getProductId())
+            Product product = productRepository.findById(itemReq.getProductId())
                     .orElseThrow(() -> new ProductNotFoundException(itemReq.getProductId()));
-            if (!"ACTIVE".equals(p.getStatus())) {
-                throw new RuntimeException("Sản phẩm '" + p.getName() + "' hiện không còn bán");
+
+            if (product.isDeleted()) {
+                throw new RuntimeException("Sản phẩm '" + product.getName() + "' đã bị xóa khỏi danh mục bán");
             }
-            if (p.getStockQuantity() < itemReq.getQuantity()) {
-                throw new OutOfStockException(p.getName(), itemReq.getQuantity(), p.getStockQuantity());
+            if (!"ACTIVE".equals(product.getStatus())) {
+                throw new RuntimeException("Sản phẩm '" + product.getName() + "' hiện không còn bán");
             }
-            products.add(p);
+
+            int requestedQuantity = requestedQuantities.getOrDefault(product.getId(), 0) + itemReq.getQuantity();
+            if (product.getStockQuantity() < requestedQuantity) {
+                throw new OutOfStockException(product.getName(), requestedQuantity, product.getStockQuantity());
+            }
+
+            requestedQuantities.put(product.getId(), requestedQuantity);
+            products.add(product);
         }
 
-        // 3. Tính tổng, tạo order items
         BigDecimal total = BigDecimal.ZERO;
         List<OrderItem> orderItems = new ArrayList<>();
 
         for (int i = 0; i < req.getItems().size(); i++) {
             CreateOrderItemRequest itemReq = req.getItems().get(i);
-            Product p = products.get(i);
+            Product product = products.get(i);
 
-            BigDecimal lineTotal = p.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
+            BigDecimal lineTotal = product.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
             total = total.add(lineTotal);
 
-            OrderItem oi = new OrderItem();
-            oi.setProductId(p.getId());
-            oi.setQuantity(itemReq.getQuantity());
-            oi.setUnitPrice(p.getPrice());
-            oi.setLineTotal(lineTotal);
-            orderItems.add(oi);
+            OrderItem orderItem = new OrderItem();
+            orderItem.setProductId(product.getId());
+            orderItem.setQuantity(itemReq.getQuantity());
+            orderItem.setUnitPrice(product.getPrice());
+            orderItem.setLineTotal(lineTotal);
+            orderItems.add(orderItem);
 
-            // 4. Trừ tồn kho
-            p.setStockQuantity(p.getStockQuantity() - itemReq.getQuantity());
-            productRepository.save(p);
+            product.setStockQuantity(product.getStockQuantity() - itemReq.getQuantity());
+            productRepository.save(product);
         }
 
-        // 5. Lưu order
         Order order = new Order();
         order.setCustomerId(req.getCustomerId());
         order.setTotalAmount(total);
         order.setStatus("PENDING");
-        Order saved = orderRepository.save(order);
+        Order savedOrder = orderRepository.save(order);
 
-        // 6. Gắn orderId rồi lưu items
-        for (OrderItem oi : orderItems) {
-            oi.setOrderId(saved.getId());
+        for (OrderItem orderItem : orderItems) {
+            orderItem.setOrderId(savedOrder.getId());
         }
         List<OrderItem> savedItems = orderItemRepository.saveAll(orderItems);
 
-        // 7. Build response
-        OrderResponse response = OrderResponse.from(saved);
+        OrderResponse response = OrderResponse.from(savedOrder);
         response.setItems(savedItems.stream().map(OrderItemResponse::from).collect(Collectors.toList()));
         return response;
     }
 
     public List<OrderResponse> getAll() {
         return orderRepository.findAll().stream()
-                .map(this::buildResponse).collect(Collectors.toList());
+                .map(this::buildResponse)
+                .collect(Collectors.toList());
     }
 
     public List<OrderResponse> getByStatus(String status) {
         return orderRepository.findByStatus(status).stream()
-                .map(this::buildResponse).collect(Collectors.toList());
+                .map(this::buildResponse)
+                .collect(Collectors.toList());
     }
 
     public OrderResponse getById(Long id) {
@@ -104,20 +125,20 @@ public class OrderService {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException(id));
 
-        // Nâng cao: không cho hủy đơn đã COMPLETED
         if ("COMPLETED".equals(order.getStatus()) && "CANCELED".equals(req.getStatus())) {
             throw new InvalidOrderStatusException("Không thể hủy đơn hàng đã hoàn thành");
         }
 
         order.setStatus(req.getStatus());
-        return OrderResponse.from(orderRepository.save(order));
+        return buildResponse(orderRepository.save(order));
     }
 
     private OrderResponse buildResponse(Order order) {
-        OrderResponse r = OrderResponse.from(order);
-        List<OrderItemResponse> items = orderItemRepository.findByOrderId(order.getId())
-                .stream().map(OrderItemResponse::from).collect(Collectors.toList());
-        r.setItems(items);
-        return r;
+        OrderResponse response = OrderResponse.from(order);
+        List<OrderItemResponse> items = orderItemRepository.findByOrderId(order.getId()).stream()
+                .map(OrderItemResponse::from)
+                .collect(Collectors.toList());
+        response.setItems(items);
+        return response;
     }
 }

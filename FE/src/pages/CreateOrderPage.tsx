@@ -1,9 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { api, Customer, Product } from "@/services/api";
 import { useToast } from "@/hooks/useToast";
 import { ArrowLeft, Plus, Trash2, ShoppingCart, Users, Package } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import {
+  type OrderDraftItem,
+  sanitizeIntegerInput,
+  validateOrderDraft,
+} from "@/lib/validation";
+
+type DraftOrderLine = OrderDraftItem & {
+  id: number;
+};
 
 export default function CreateOrderPage() {
   const navigate = useNavigate();
@@ -11,46 +20,77 @@ export default function CreateOrderPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customerId, setCustomerId] = useState("");
-  const [items, setItems] = useState<{ productId: string; quantity: string }[]>([
-    { productId: "", quantity: "1" },
-  ]);
+  const [items, setItems] = useState<DraftOrderLine[]>([{ id: 1, productId: "", quantity: "1" }]);
+  const [nextItemId, setNextItemId] = useState(2);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([api.getCustomers(), api.getProducts()])
-      .then(([c, p]) => {
-        setCustomers(c);
-        setProducts(p.filter(p => p.status === "ACTIVE"));
+      .then(([customerList, productList]) => {
+        setCustomers(customerList);
+        setProducts(productList.filter((product) => product.status === "ACTIVE"));
       })
-      .catch(() => { /* backend offline — selects stay empty */ });
+      .catch(() => {});
   }, []);
 
-  const activeItems = items.filter(i => i.productId);
+  const activeItems = items.filter((item) => item.productId);
 
   const estimatedTotal = activeItems.reduce((sum, item) => {
-    const p = products.find(p => p.id === Number(item.productId));
-    return sum + (p ? p.price * Number(item.quantity) : 0);
+    const product = products.find((candidate) => candidate.id === Number(item.productId));
+    return sum + (product ? product.price * Number(item.quantity) : 0);
   }, 0);
 
-  const updateItem = (index: number, field: string, value: string) => {
-    setItems(prev => prev.map((it, i) => i === index ? { ...it, [field]: value } : it));
+  const syncDraftErrors = (nextCustomerId: string, nextItems: DraftOrderLine[]) => {
+    const nextErrors = validateOrderDraft(nextCustomerId, nextItems, products);
+    setErrors((prev) => {
+      const merged = { ...prev };
+      if (nextErrors.customerId) merged.customerId = nextErrors.customerId;
+      else delete merged.customerId;
+      if (nextErrors.items) merged.items = nextErrors.items;
+      else delete merged.items;
+      return merged;
+    });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrors({});
-    const validItems = items.filter(i => i.productId);
-    if (!customerId) { setErrors({ customerId: "Vui lòng chọn khách hàng" }); return; }
-    if (validItems.length === 0) { setErrors({ items: "Vui lòng thêm ít nhất 1 sản phẩm" }); return; }
+  const updateItem = (itemId: number, field: "productId" | "quantity", value: string) => {
+    const normalizedValue = field === "quantity" ? sanitizeIntegerInput(value) : value;
+    const nextItems = items.map((item) => (item.id === itemId ? { ...item, [field]: normalizedValue } : item));
+    setItems(nextItems);
+    if (errors.items || errors.customerId) syncDraftErrors(customerId, nextItems);
+  };
 
+  const addItem = () => {
+    setItems((prev) => [...prev, { id: nextItemId, productId: "", quantity: "1" }]);
+    setNextItemId((prev) => prev + 1);
+  };
+
+  const removeItem = (itemId: number) => {
+    const nextItems = items.filter((item) => item.id !== itemId);
+    setItems(nextItems);
+    if (errors.items || errors.customerId) syncDraftErrors(customerId, nextItems);
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    const validationErrors = validateOrderDraft(customerId, items, products);
+    if (Object.keys(validationErrors).length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
+
+    const validItems = items.filter((item) => item.productId);
+    setErrors({});
     setLoading(true);
     try {
       const order = await api.createOrder({
         customerId: Number(customerId),
-        items: validItems.map(i => ({ productId: Number(i.productId), quantity: Number(i.quantity) })),
+        items: validItems.map((item) => ({
+          productId: Number(item.productId),
+          quantity: Number(item.quantity),
+        })),
       });
-      toast(`Tạo đơn hàng #${order.id} thành công!`, "success");
+      toast(`Tạo đơn hàng #${order.id} thành công.`, "success");
       navigate("/orders");
     } catch (err: any) {
       if (err.errors) setErrors(err.errors);
@@ -60,118 +100,146 @@ export default function CreateOrderPage() {
     }
   };
 
-  const selectedCustomer = customers.find(c => c.id === Number(customerId));
+  const selectedCustomer = customers.find((customer) => customer.id === Number(customerId));
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
-      {/* Header */}
+    <div className="mx-auto max-w-3xl space-y-5">
       <div className="flex items-center gap-3">
-        <Link to="/orders" className="w-9 h-9 bg-white border border-slate-200 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-700 hover:border-slate-300 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
+        <Link
+          to="/orders"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
         </Link>
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Tạo đơn hàng</h1>
-          <p className="text-slate-500 text-sm">Chọn khách hàng và sản phẩm</p>
+          <p className="text-sm text-slate-500">Chọn khách hàng và sản phẩm</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Customer */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-          <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-            <div className="w-7 h-7 bg-indigo-50 rounded-lg flex items-center justify-center">
-              <Users className="w-4 h-4 text-indigo-500" />
+        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-2 border-b border-slate-100 pb-3">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50">
+              <Users className="h-4 w-4 text-indigo-500" />
             </div>
-            <h2 className="font-semibold text-slate-700 text-sm">Thông tin khách hàng</h2>
+            <h2 className="text-sm font-semibold text-slate-700">Thông tin khách hàng</h2>
           </div>
+
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">Chọn khách hàng <span className="text-red-400">*</span></label>
+            <label className="text-sm font-medium text-slate-700">
+              Chọn khách hàng <span className="text-red-400">*</span>
+            </label>
             <select
               value={customerId}
-              onChange={e => { setCustomerId(e.target.value); if (errors.customerId) setErrors(p => { const e = {...p}; delete e.customerId; return e; }); }}
-              className={`input-field w-full px-4 py-2.5 text-sm rounded-xl border transition-colors focus:outline-none focus:border-indigo-400 bg-white ${errors.customerId ? "border-red-400" : "border-slate-200"}`}
+              onChange={(e) => {
+                const nextCustomerId = e.target.value;
+                setCustomerId(nextCustomerId);
+                if (errors.customerId || errors.items) syncDraftErrors(nextCustomerId, items);
+              }}
+              onBlur={() => syncDraftErrors(customerId, items)}
+              className={`input-field w-full rounded-xl border bg-white px-4 py-2.5 text-sm transition-colors focus:border-indigo-400 focus:outline-none ${errors.customerId ? "border-red-400" : "border-slate-200"}`}
             >
               <option value="">-- Chọn khách hàng --</option>
-              {customers.map(c => (
-                <option key={c.id} value={c.id}>{c.fullName} — {c.phone}</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.fullName} - {customer.phone}
+                </option>
               ))}
             </select>
             {errors.customerId && <p className="text-xs text-red-500">⚠ {errors.customerId}</p>}
           </div>
+
           {selectedCustomer && (
-            <div className="mt-3 p-3 bg-indigo-50 rounded-xl flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+            <div className="mt-3 flex items-center gap-3 rounded-xl bg-indigo-50 p-3">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 text-sm font-bold text-white">
                 {selectedCustomer.fullName.charAt(0)}
               </div>
               <div>
                 <p className="text-sm font-medium text-indigo-800">{selectedCustomer.fullName}</p>
-                <p className="text-xs text-indigo-500">{selectedCustomer.email} • {selectedCustomer.phone}</p>
+                <p className="text-xs text-indigo-500">
+                  {selectedCustomer.email} • {selectedCustomer.phone}
+                </p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Items */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 bg-emerald-50 rounded-lg flex items-center justify-center">
-                <Package className="w-4 h-4 text-emerald-500" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
+                <Package className="h-4 w-4 text-emerald-500" />
               </div>
-              <h2 className="font-semibold text-slate-700 text-sm">Sản phẩm đặt hàng</h2>
+              <h2 className="text-sm font-semibold text-slate-700">Sản phẩm đặt hàng</h2>
             </div>
             <span className="text-xs text-slate-400">{activeItems.length} sản phẩm</span>
           </div>
 
-          {errors.items && <p className="text-xs text-red-500 mb-3">⚠ {errors.items}</p>}
+          {errors.items && <p className="mb-3 text-xs text-red-500">⚠ {errors.items}</p>}
 
           <div className="space-y-3">
-            {items.map((item, index) => {
-              const selectedProduct = products.find(p => p.id === Number(item.productId));
+            {items.map((item) => {
+              const selectedProduct = products.find((product) => product.id === Number(item.productId));
+
               return (
-                <div key={index} className="flex gap-3 items-start p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <div key={item.id} className="flex flex-col gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4 md:flex-row md:items-start">
                   <div className="flex-1">
-                    <label className="text-xs font-medium text-slate-500 mb-1 block">Sản phẩm</label>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Sản phẩm</label>
                     <select
                       value={item.productId}
-                      onChange={e => updateItem(index, "productId", e.target.value)}
-                      className="input-field w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-indigo-400 transition-colors"
+                      onChange={(e) => updateItem(item.id, "productId", e.target.value)}
+                      onBlur={() => syncDraftErrors(customerId, items)}
+                      className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-colors focus:border-indigo-400 focus:outline-none"
                     >
                       <option value="">-- Chọn sản phẩm --</option>
-                      {products.map(p => (
-                        <option key={p.id} value={p.id} disabled={p.stockQuantity === 0}>
-                          {p.name} — {formatCurrency(p.price)} (còn {p.stockQuantity})
-                        </option>
-                      ))}
+                      {products.map((product) => {
+                        const selectedElsewhere = items.some(
+                          (candidate) => candidate.id !== item.id && candidate.productId === String(product.id),
+                        );
+
+                        return (
+                          <option
+                            key={product.id}
+                            value={product.id}
+                            disabled={product.stockQuantity === 0 || selectedElsewhere}
+                          >
+                            {product.name} - {formatCurrency(product.price)} (còn {product.stockQuantity})
+                          </option>
+                        );
+                      })}
                     </select>
                     {selectedProduct && (
-                      <p className="text-xs text-emerald-600 mt-1 font-medium">
+                      <p className="mt-1 text-xs font-medium text-emerald-600">
                         Giá: {formatCurrency(selectedProduct.price)} • Còn {selectedProduct.stockQuantity}
                       </p>
                     )}
                   </div>
-                  <div className="w-28 flex-shrink-0">
-                    <label className="text-xs font-medium text-slate-500 mb-1 block">Số lượng</label>
+
+                  <div className="w-full md:w-28 md:flex-shrink-0">
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Số lượng</label>
                     <input
                       type="number"
                       min="1"
                       max={selectedProduct?.stockQuantity ?? 999}
                       value={item.quantity}
-                      onChange={e => updateItem(index, "quantity", e.target.value)}
-                      className="input-field w-full px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-indigo-400 transition-colors text-center"
+                      onChange={(e) => updateItem(item.id, "quantity", e.target.value)}
+                      onBlur={() => syncDraftErrors(customerId, items)}
+                      className="input-field w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm transition-colors focus:border-indigo-400 focus:outline-none"
                     />
                     {selectedProduct && (
-                      <p className="text-xs text-slate-400 mt-1 text-right">
+                      <p className="mt-1 text-right text-xs text-slate-400">
                         = {formatCurrency(selectedProduct.price * Number(item.quantity || 0))}
                       </p>
                     )}
                   </div>
+
                   <button
                     type="button"
-                    onClick={() => setItems(items.filter((_, i) => i !== index))}
-                    className="mt-6 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                    onClick={() => removeItem(item.id)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 md:mt-6 md:flex-shrink-0"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               );
@@ -180,39 +248,40 @@ export default function CreateOrderPage() {
 
           <button
             type="button"
-            onClick={() => setItems([...items, { productId: "", quantity: "1" }])}
-            className="mt-3 w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 hover:border-indigo-300 hover:text-indigo-500 transition-colors text-sm font-medium"
+            onClick={addItem}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 py-3 text-sm font-medium text-slate-400 transition-colors hover:border-indigo-300 hover:text-indigo-500"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="h-4 w-4" />
             Thêm sản phẩm
           </button>
         </div>
 
-        {/* Summary */}
         {activeItems.length > 0 && (
-          <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100 p-5">
+          <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-purple-50 p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <ShoppingCart className="w-4 h-4 text-indigo-500" />
+                <ShoppingCart className="h-4 w-4 text-indigo-500" />
                 <span className="text-sm font-medium text-indigo-700">Tổng ước tính</span>
               </div>
               <span className="text-xl font-bold text-indigo-700">{formatCurrency(estimatedTotal)}</span>
             </div>
-            <p className="text-xs text-indigo-400 mt-1">{activeItems.length} sản phẩm</p>
+            <p className="mt-1 text-xs text-indigo-400">{activeItems.length} sản phẩm</p>
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex justify-end gap-3">
-          <Link to="/orders" className="px-4 py-2.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Link
+            to="/orders"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-center text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
             Hủy
           </Link>
           <button
             type="submit"
             disabled={loading}
-            className="btn-primary text-white px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shadow-md disabled:opacity-60"
+            className="btn-primary flex items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold text-white shadow-md disabled:opacity-60"
           >
-            <ShoppingCart className="w-4 h-4" />
+            <ShoppingCart className="h-4 w-4" />
             {loading ? "Đang tạo..." : "Xác nhận đơn hàng"}
           </button>
         </div>

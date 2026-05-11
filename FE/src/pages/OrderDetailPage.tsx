@@ -193,12 +193,12 @@ export default function OrderDetailPage() {
       </div>
 
       {/* Line Items */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
           <Package className="w-4 h-4 text-indigo-400" />
           <h2 className="text-sm font-semibold text-slate-600">Chi tiết sản phẩm</h2>
         </div>
-        <table className="w-full">
+        <table className="w-full min-w-[720px]">
           <thead>
             <tr className="border-b border-slate-50">
               <th className="px-6 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Sản phẩm</th>

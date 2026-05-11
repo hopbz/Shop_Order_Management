@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # ── MySQL ──────────────────────────────────────────────────
   db:
@@ -48,7 +46,7 @@ services:
       context: ./FE
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080/api}
+        VITE_API_URL: ${VITE_API_URL:-/api}
     container_name: shop_frontend
     restart: unless-stopped
     depends_on:

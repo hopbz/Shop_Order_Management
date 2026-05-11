@@ -19,7 +19,6 @@ public class UpdateProductRequest {
     @Min(value = 0, message = "Số lượng không được âm")
     private Integer stockQuantity;
 
-    @NotBlank(message = "Trạng thái không được rỗng")
     @Pattern(regexp = "^(ACTIVE|INACTIVE)$", message = "Status chỉ được là ACTIVE hoặc INACTIVE")
     private String status;
 }
