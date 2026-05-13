@@ -133,7 +133,7 @@ export default function CreateProductPage() {
                 <input
                   type="number"
                   min="1"
-                  step="1000"
+                  step="1"
                   value={formData.price}
                   onChange={e => setField("price", e.target.value)}
                   onBlur={() => handleBlur("price")}
