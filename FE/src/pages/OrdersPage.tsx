@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, ShoppingCart, Filter } from "lucide-react";
+import { Plus, ShoppingCart } from "lucide-react";
 import { api, Order, OrderStatus } from "@/services/api";
 import { formatCurrency } from "@/lib/utils";
 import OfflineBanner from "@/components/OfflineBanner";
@@ -9,34 +9,42 @@ import EmptyState from "@/components/EmptyState";
 const ALL_STATUSES: OrderStatus[] = ["PENDING", "CONFIRMED", "SHIPPING", "COMPLETED", "CANCELED"];
 
 const STATUS_LABEL: Record<string, string> = {
-  PENDING: "Chờ xử lý",
+  PENDING:   "Chờ xử lý",
   CONFIRMED: "Đã xác nhận",
-  SHIPPING: "Đang giao",
+  SHIPPING:  "Đang giao",
   COMPLETED: "Hoàn thành",
-  CANCELED: "Đã hủy",
+  CANCELED:  "Đã hủy",
 };
 
-const STATUS_CLASS: Record<string, string> = {
-  PENDING: "badge-pending",
-  CONFIRMED: "badge-confirmed",
-  SHIPPING: "badge-shipping",
-  COMPLETED: "badge-completed",
-  CANCELED: "badge-canceled",
+const STATUS_BADGE: Record<string, string> = {
+  PENDING:   "badge-base badge-pending",
+  CONFIRMED: "badge-base badge-confirmed",
+  SHIPPING:  "badge-base badge-shipping",
+  COMPLETED: "badge-base badge-completed",
+  CANCELED:  "badge-base badge-canceled",
+};
+
+/* Filter tab dot colors */
+const STATUS_DOT: Record<string, string> = {
+  PENDING:   "bg-amber-400",
+  CONFIRMED: "bg-blue-400",
+  SHIPPING:  "bg-violet-500",
+  COMPLETED: "bg-emerald-500",
+  CANCELED:  "bg-rose-400",
 };
 
 export default function OrdersPage() {
   const navigate = useNavigate();
   const [allOrders, setAllOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isError, setIsError] = useState(false);
-  const [filter, setFilter] = useState("");
+  const [loading,   setLoading]   = useState(true);
+  const [isError,   setIsError]   = useState(false);
+  const [filter,    setFilter]    = useState("");
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setIsError(false);
     try {
-      const data = await api.getOrders();
-      setAllOrders(data);
+      setAllOrders(await api.getOrders());
     } catch {
       setIsError(true);
       setAllOrders([]);
@@ -45,132 +53,154 @@ export default function OrdersPage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
+  useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  const orders = filter ? allOrders.filter((order) => order.status === filter) : allOrders;
-  const totalRevenue = orders.reduce((sum, order) => sum + order.totalAmount, 0);
-  const countOf = (status: string) => allOrders.filter((order) => order.status === status).length;
+  const orders       = filter ? allOrders.filter(o => o.status === filter) : allOrders;
+  const totalRevenue = orders.reduce((s, o) => s + o.totalAmount, 0);
+  const countOf      = (s: string) => allOrders.filter(o => o.status === s).length;
 
   return (
     <div className="space-y-5">
       <OfflineBanner />
 
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Đơn hàng</h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            {isError ? "—" : `${orders.length} đơn • Tổng: ${formatCurrency(totalRevenue)}`}
+          <h1 className="text-xl font-bold text-slate-800">Đơn hàng</h1>
+          <p className="mt-0.5 text-sm text-slate-400">
+            {isError ? "—" : (
+              <span>
+                <span className="font-semibold text-slate-600">{orders.length}</span>
+                {" đơn · Tổng: "}
+                <span className="font-semibold text-indigo-600">{formatCurrency(totalRevenue)}</span>
+              </span>
+            )}
           </p>
         </div>
         <Link
           to="/orders/new"
-          className="btn-primary flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-md"
+          className="btn-primary inline-flex items-center gap-2 self-start rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-md sm:self-auto"
         >
           <Plus className="h-4 w-4" />
           Tạo đơn hàng
         </Link>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Filter className="h-4 w-4 text-slate-400" />
+      {/* Status filter tabs */}
+      <div className="flex flex-wrap gap-2">
         <button
           onClick={() => setFilter("")}
-          className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+          className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
             !filter
-              ? "bg-indigo-500 text-white shadow-sm"
-              : "border border-slate-200 bg-white text-slate-500 hover:border-indigo-300 hover:text-indigo-500"
+              ? "bg-indigo-500 text-white shadow-sm shadow-indigo-200"
+              : "border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
           }`}
         >
-          Tất cả {!isError && `(${allOrders.length})`}
+          Tất cả
+          {!isError && (
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${!filter ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"}`}>
+              {allOrders.length}
+            </span>
+          )}
         </button>
-        {ALL_STATUSES.map((status) => (
+        {ALL_STATUSES.map(status => (
           <button
             key={status}
             onClick={() => setFilter(status)}
-            className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-all ${
               filter === status
-                ? "bg-indigo-500 text-white shadow-sm"
-                : "border border-slate-200 bg-white text-slate-500 hover:border-indigo-300 hover:text-indigo-500"
+                ? "bg-indigo-500 text-white shadow-sm shadow-indigo-200"
+                : "border border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
             }`}
           >
-            {STATUS_LABEL[status]} {!isError && `(${countOf(status)})`}
+            <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${filter === status ? "bg-white" : STATUS_DOT[status]}`} />
+            {STATUS_LABEL[status]}
+            {!isError && (
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${filter === status ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"}`}>
+                {countOf(status)}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white shadow-sm">
-        <table className="min-w-[840px] w-full">
-          <thead>
-            <tr className="border-b border-slate-100">
-              {["Mã ĐH", "Mã KH", "Tổng tiền", "Ngày tạo", "Trạng thái", "Chi tiết"].map((header, index) => (
-                <th
-                  key={header}
-                  className={`px-6 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-400 ${index === 5 ? "text-right" : "text-left"}`}
-                >
-                  {header}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <tr key={i} className="border-b border-slate-50">
-                  {Array.from({ length: 6 }).map((_, j) => (
-                    <td key={j} className="px-6 py-4">
-                      <div className="h-4 rounded bg-slate-100 animate-pulse" />
-                    </td>
-                  ))}
-                </tr>
-              ))
-            ) : (
-              <>
-                <EmptyState
-                  colSpan={6}
-                  icon={<ShoppingCart className="h-10 w-10" />}
-                  emptyText="Chưa có đơn hàng nào"
-                  isEmpty={orders.length === 0 && !isError}
-                  isError={isError}
-                  onRetry={fetchOrders}
-                />
-                {!isError &&
-                  orders.map((order, idx) => (
+      {/* Table */}
+      <div className="page-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[800px]">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/60">
+                {["Mã ĐH", "Khách hàng", "Tổng tiền", "Ngày tạo", "Trạng thái", ""].map((h, i) => (
+                  <th
+                    key={h || i}
+                    className={`px-6 py-3.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 ${i === 5 ? "text-right w-16" : "text-left"}`}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 6 }).map((_, j) => (
+                      <td key={j} className="px-6 py-4">
+                        <div className="skeleton h-4" style={{ width: `${50 + (j * 15) % 45}%` }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <>
+                  <EmptyState
+                    colSpan={6}
+                    icon={<ShoppingCart className="h-10 w-10" />}
+                    emptyText={filter ? `Không có đơn "${STATUS_LABEL[filter]}"` : "Chưa có đơn hàng nào"}
+                    isEmpty={orders.length === 0 && !isError}
+                    isError={isError}
+                    onRetry={fetchOrders}
+                  />
+                  {!isError && orders.map(order => (
                     <tr
                       key={order.id}
-                      className={`table-row-hover cursor-pointer ${idx < orders.length - 1 ? "border-b border-slate-50" : ""}`}
+                      className="table-row-hover cursor-pointer"
                       onClick={() => navigate(`/orders/${order.id}`)}
                     >
                       <td className="px-6 py-4">
                         <span className="text-sm font-bold text-indigo-600">#{order.id}</span>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 text-xs font-bold text-white">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-violet-500 text-[10px] font-bold text-white shadow-sm">
                             {order.customerId}
                           </div>
                           <span className="text-sm text-slate-600">KH #{order.customerId}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm font-semibold text-slate-700">{formatCurrency(order.totalAmount)}</td>
-                      <td className="px-6 py-4 text-sm text-slate-400">
-                        {order.createdAt ? new Date(order.createdAt).toLocaleDateString("vi-VN") : "—"}
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-semibold text-slate-800">{formatCurrency(order.totalAmount)}</span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_CLASS[order.status] ?? ""}`}>
+                        <span className="text-xs text-slate-400">
+                          {order.createdAt ? new Date(order.createdAt).toLocaleDateString("vi-VN") : "—"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={STATUS_BADGE[order.status] ?? "badge-base"}>
                           {STATUS_LABEL[order.status] ?? order.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <span className="text-xs font-medium text-indigo-400">Xem →</span>
+                        <span className="text-xs font-semibold text-indigo-400">Xem →</span>
                       </td>
                     </tr>
                   ))}
-              </>
-            )}
-          </tbody>
-        </table>
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
