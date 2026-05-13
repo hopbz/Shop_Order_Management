@@ -484,9 +484,7 @@ Import file `Shop_API.postman_collection.json` để chạy nhanh.
 
 ---
 
-## 📄 License
 
-Dự án này được phát hành dưới [MIT License](LICENSE).
 
 ---
 
